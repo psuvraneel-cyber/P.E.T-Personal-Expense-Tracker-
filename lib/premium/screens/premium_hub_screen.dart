@@ -1,0 +1,515 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import 'package:pet/core/theme/app_theme.dart';
+import 'package:pet/data/models/enums.dart';
+import 'package:pet/providers/transaction_provider.dart';
+import 'package:pet/providers/budget_provider.dart';
+import 'package:pet/premium/providers/goal_provider.dart';
+import 'package:pet/premium/providers/recurring_provider.dart';
+import 'package:pet/premium/services/spend_health_service.dart';
+import 'package:pet/premium/screens/recurring_bills_screen.dart';
+import 'package:pet/premium/screens/cashflow_screen.dart';
+import 'package:pet/premium/screens/goals_screen.dart';
+import 'package:pet/premium/screens/ai_copilot_screen.dart';
+import 'package:pet/premium/screens/alerts_screen.dart';
+import 'package:pet/premium/screens/spend_pause_screen.dart';
+import 'package:pet/premium/screens/tax_buckets_screen.dart';
+import 'package:pet/premium/screens/weekly_planner_screen.dart';
+import 'package:pet/premium/widgets/feature_card.dart';
+
+class PremiumHubScreen extends StatelessWidget {
+  const PremiumHubScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fmt = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
+
+    return Scaffold(
+      backgroundColor: isDark ? AppTheme.primaryDark : AppTheme.primaryLight,
+      body:
+          Consumer4<
+            TransactionProvider,
+            GoalProvider,
+            RecurringProvider,
+            BudgetProvider
+          >(
+            builder:
+                (
+                  context,
+                  txnProvider,
+                  goalProvider,
+                  recurringProvider,
+                  budgetProvider,
+                  _,
+                ) {
+                  final health = SpendHealthService.instance.calculate(
+                    transactions: txnProvider.allTransactions,
+                    goals: goalProvider.goals,
+                    bills: recurringProvider.recurring,
+                    categoryBudgets: {
+                      for (final b in budgetProvider.budgets)
+                        b.categoryId: b.amount,
+                    },
+                    totalBudget: budgetProvider.budgets.fold(
+                      0.0,
+                      (s, b) => s + b.amount,
+                    ),
+                    budgetSpent: budgetProvider.spentAmounts,
+                  );
+
+                  final now = DateTime.now();
+                  final monthStart = DateTime(now.year, now.month, 1);
+                  final monthTxns = txnProvider.allTransactions
+                      .where(
+                        (t) => t.date.isAfter(
+                          monthStart.subtract(const Duration(days: 1)),
+                        ),
+                      )
+                      .toList();
+                  final monthIncome = monthTxns
+                      .where((t) => t.type == TransactionType.income)
+                      .fold(0.0, (s, t) => s + t.amount);
+                  final monthExpense = monthTxns
+                      .where((t) => t.type == TransactionType.expense)
+                      .fold(0.0, (s, t) => s + t.amount);
+                  final totalSaved = goalProvider.goals.fold(
+                    0.0,
+                    (s, g) => s + g.currentAmount,
+                  );
+                  final billsDueSoon = recurringProvider.recurring
+                      .where(
+                        (b) =>
+                            b.nextDueAt.isAfter(now) &&
+                            b.nextDueAt.difference(now).inDays <= 7,
+                      )
+                      .length;
+
+                  return CustomScrollView(
+                    slivers: [
+                      _buildAppBar(context, isDark),
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate([
+                            const SizedBox(height: 8),
+                            _buildHealthBanner(context, health, isDark),
+                            const SizedBox(height: 14),
+                            _buildQuickStats(
+                              context,
+                              totalSaved,
+                              billsDueSoon,
+                              monthIncome,
+                              monthExpense,
+                              fmt,
+                              isDark,
+                            ),
+                            const SizedBox(height: 20),
+                            _buildSectionTitle(context, 'Features'),
+                            const SizedBox(height: 10),
+                            _buildFeatureGrid(
+                              context,
+                              goalProvider,
+                              recurringProvider,
+                              fmt,
+                              isDark,
+                            ),
+                            if (health.insights.isNotEmpty) ...[
+                              const SizedBox(height: 20),
+                              _buildSectionTitle(
+                                context,
+                                '💡 Insights for You',
+                              ),
+                              const SizedBox(height: 10),
+                              ...health.insights.map(
+                                (tip) =>
+                                    _buildInsightCard(context, tip, isDark),
+                              ),
+                            ],
+                          ]),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+          ),
+    );
+  }
+
+  Widget _buildAppBar(BuildContext context, bool isDark) {
+    return SliverAppBar(
+      expandedHeight: 0,
+      floating: true,
+      snap: true,
+      backgroundColor: isDark ? AppTheme.primaryDark : AppTheme.primaryLight,
+      elevation: 0,
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              gradient: AppTheme.heroGradient,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.workspace_premium_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Text('Premium Hub'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHealthBanner(
+    BuildContext context,
+    SpendHealthResult health,
+    bool isDark,
+  ) {
+    final scoreColor = health.totalScore >= 70
+        ? AppTheme.incomeGreen
+        : health.totalScore >= 50
+        ? AppTheme.warningYellow
+        : AppTheme.expenseRed;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: AppTheme.heroGradient,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.accentPurple.withAlpha(70),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Spend Health Score',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${health.totalScore}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 52,
+                          fontWeight: FontWeight.bold,
+                          height: 1,
+                        ),
+                      ),
+                      const Text(
+                        ' / 100',
+                        style: TextStyle(color: Colors.white60, fontSize: 18),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: scoreColor.withAlpha(30),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: scoreColor.withAlpha(80)),
+                ),
+                child: Text(
+                  health.grade,
+                  style: TextStyle(
+                    color: scoreColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: health.dimensions.map((d) {
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Column(
+                    children: [
+                      Text(d.emoji, style: const TextStyle(fontSize: 16)),
+                      const SizedBox(height: 4),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: d.score / 100,
+                          minHeight: 5,
+                          backgroundColor: Colors.white.withAlpha(25),
+                          valueColor: const AlwaysStoppedAnimation(
+                            Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${d.score}',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickStats(
+    BuildContext context,
+    double totalSaved,
+    int billsDueSoon,
+    double monthIncome,
+    double monthExpense,
+    NumberFormat fmt,
+    bool isDark,
+  ) {
+    final net = monthIncome - monthExpense;
+    final stats = [
+      (
+        Icons.savings_rounded,
+        'Saved',
+        fmt.format(totalSaved),
+        AppTheme.accentPurple,
+      ),
+      (
+        Icons.calendar_today_rounded,
+        'Bills this week',
+        '$billsDueSoon due',
+        AppTheme.warningYellow,
+      ),
+      (
+        net >= 0 ? Icons.trending_up_rounded : Icons.trending_down_rounded,
+        'Month net',
+        fmt.format(net),
+        net >= 0 ? AppTheme.incomeGreen : AppTheme.expenseRed,
+      ),
+    ];
+
+    return Row(
+      children: stats.map((s) {
+        return Expanded(
+          child: Container(
+            margin: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            decoration: BoxDecoration(
+              color: isDark ? AppTheme.cardDark : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withAlpha(10)
+                    : Colors.black.withAlpha(7),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(s.$1, size: 18, color: s.$4),
+                const SizedBox(height: 6),
+                Text(
+                  s.$3,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: s.$4,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  s.$2,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppTheme.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildSectionTitle(BuildContext context, String title) {
+    return Text(
+      title,
+      style: Theme.of(
+        context,
+      ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+    );
+  }
+
+  Widget _buildFeatureGrid(
+    BuildContext context,
+    GoalProvider goalProvider,
+    RecurringProvider recurringProvider,
+    NumberFormat fmt,
+    bool isDark,
+  ) {
+    final goalBadge = goalProvider.goals.isEmpty
+        ? null
+        : '${goalProvider.goals.length} goal${goalProvider.goals.length > 1 ? 's' : ''} · '
+              '${fmt.format(goalProvider.goals.fold(0.0, (s, g) => s + g.currentAmount))} saved';
+
+    final billBadge = recurringProvider.recurring.isEmpty
+        ? null
+        : '${recurringProvider.recurring.length} tracked';
+
+    final features = [
+      (
+        Icons.flag_rounded,
+        'Savings Goals',
+        'Set targets & top up',
+        AppTheme.accentPurple,
+        goalBadge,
+        () => _push(context, const GoalsScreen()),
+      ),
+      (
+        Icons.repeat_rounded,
+        'Bills & Subscriptions',
+        'Upcoming payments',
+        AppTheme.accentTeal,
+        billBadge,
+        () => _push(context, const RecurringBillsScreen()),
+      ),
+      (
+        Icons.insights_rounded,
+        'Cash Flow',
+        'Safe-to-spend & runway',
+        const Color(0xFF8B5CF6),
+        null,
+        () => _push(context, const CashflowScreen()),
+      ),
+      (
+        Icons.calendar_view_week_rounded,
+        'Weekly Planner',
+        'Daily spend tracker',
+        AppTheme.accentTeal,
+        null,
+        () => _push(context, const WeeklyPlannerScreen()),
+      ),
+      (
+        Icons.pause_circle_rounded,
+        'Focus Mode',
+        'Pause impulse spending',
+        const Color(0xFFf59e0b),
+        null,
+        () => _push(context, const SpendPauseScreen()),
+      ),
+      (
+        Icons.receipt_long_rounded,
+        'Tax Buckets',
+        '80C, 80D, HRA & more',
+        const Color(0xFF10b981),
+        null,
+        () => _push(context, const TaxBucketsScreen()),
+      ),
+      (
+        Icons.auto_awesome_rounded,
+        'AI Copilot',
+        'Ask your finances anything',
+        const Color(0xFFec4899),
+        null,
+        () => _push(context, const AiCopilotScreen()),
+      ),
+      (
+        Icons.notifications_active_rounded,
+        'Alerts Centre',
+        'Budget & anomaly alerts',
+        AppTheme.expenseRed,
+        null,
+        () => _push(context, const AlertsScreen()),
+      ),
+    ];
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 1.1,
+      ),
+      itemCount: features.length,
+      itemBuilder: (_, i) {
+        final f = features[i];
+        return FeatureCard(
+          icon: f.$1,
+          title: f.$2,
+          subtitle: f.$3,
+          accentColor: f.$4,
+          badge: f.$5,
+          onTap: f.$6,
+        );
+      },
+    );
+  }
+
+  Widget _buildInsightCard(BuildContext context, String insight, bool isDark) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.warningYellow.withAlpha(isDark ? 20 : 12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppTheme.warningYellow.withAlpha(isDark ? 50 : 35),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('💡', style: TextStyle(fontSize: 18)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              insight,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(height: 1.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _push(BuildContext context, Widget screen) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+  }
+}

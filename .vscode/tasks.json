@@ -1,0 +1,47 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Flutter: Clean (OneDrive-safe)",
+            "type": "shell",
+            "command": "powershell",
+            "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/build_helper.ps1", "-Target", "clean"],
+            "problemMatcher": [],
+            "group": "build"
+        },
+        {
+            "label": "Flutter: Build APK (Debug)",
+            "type": "shell",
+            "command": "powershell",
+            "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/build_helper.ps1", "-Target", "apk", "-Mode", "debug"],
+            "problemMatcher": [],
+            "group": "build"
+        },
+        {
+            "label": "Flutter: Build APK (Release)",
+            "type": "shell",
+            "command": "powershell",
+            "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/build_helper.ps1", "-Target", "apk", "-Mode", "release"],
+            "problemMatcher": [],
+            "group": "build"
+        },
+        {
+            "label": "Flutter: Build Windows (Debug)",
+            "type": "shell",
+            "command": "powershell",
+            "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/build_helper.ps1", "-Target", "windows", "-Mode", "debug"],
+            "problemMatcher": [],
+            "group": "build"
+        },
+        {
+            "label": "Flutter: Pre-build OneDrive Fix",
+            "type": "shell",
+            "command": "attrib",
+            "args": ["+U", "-P", "${workspaceFolder}\\build", "/S", "/D"],
+            "problemMatcher": [],
+            "runOptions": {
+                "runOn": "folderOpen"
+            }
+        }
+    ]
+}

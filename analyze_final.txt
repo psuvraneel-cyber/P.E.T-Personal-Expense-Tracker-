@@ -1,0 +1,8 @@
+﻿
+┌─────────────────────────────────────────────────────────┐
+│ A new version of Flutter is available!                  │
+│                                                         │
+│ To update to the latest version, run "flutter upgrade". │
+└─────────────────────────────────────────────────────────┘
+Analyzing P.E.T...                                              
+No issues found! (ran in 5.3s)

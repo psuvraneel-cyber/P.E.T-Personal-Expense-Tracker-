@@ -1,0 +1,11 @@
+# Release Signing — Key Properties
+# Copy this file to key.properties and fill in your values.
+# DO NOT commit key.properties to version control.
+#
+# To generate a keystore:
+#   keytool -genkey -v -keystore pet-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias pet-release
+
+storePassword=<your-store-password>
+keyPassword=<your-key-password>
+keyAlias=pet-release
+storeFile=<path-to-pet-release.jks>

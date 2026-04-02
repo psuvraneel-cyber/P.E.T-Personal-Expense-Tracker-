@@ -1,0 +1,54 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── User profile + sub-collections ─────────────────────────────
+    match /users/{uid} {
+
+      // Only the signed-in user can read/write their own profile doc
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+      // Allow deletion of any document within the user's subtree
+      match /{document=**} {
+        allow delete: if request.auth != null && request.auth.uid == uid;
+      }
+
+      // ── Transactions ─────────────────────────────────────────────
+      match /transactions/{txnId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+
+        allow create: if request.auth != null
+          && request.auth.uid == uid
+          && request.resource.data.keys().hasAll(['amount', 'type', 'categoryId', 'date'])
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.type in ['income', 'expense'];
+
+        allow update: if request.auth != null
+          && request.auth.uid == uid
+          // Prevent changing the immutable owner (uid encoded in the path, not the doc)
+          && request.resource.data.keys().hasAll(['amount', 'type', 'categoryId', 'date'])
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0;
+
+        allow delete: if request.auth != null && request.auth.uid == uid;
+      }
+
+      // ── Categories ───────────────────────────────────────────────
+      match /categories/{catId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      // ── Budgets ──────────────────────────────────────────────────
+      match /budgets/{budgetId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+
+    // Deny all other access (default-deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
